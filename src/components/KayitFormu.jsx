@@ -1,20 +1,33 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Formun alacağı verinin başlangıç yapısı
 const initialFormData = {
-  tip: 'Bakım', // Varsayılan değer
-  tarih: new Date().toISOString().split('T')[0], // Bugünün tarihi (YYYY-MM-DD)
+  tip: 'Bakım', 
+  tarih: new Date().toISOString().split('T')[0], 
   kilometre: '',
   maliyet: '',
   parcaAdi: '',
   aciklama: '',
 };
 
-function KayitFormu({ onKayitEkle, seciliAracID }) {
-  // Form verilerini tutmak için state
+function KayitFormu({ onKayitEkle, seciliAracID, duzenlenecekVeri, onGuncelle, onDuzenlemeyiIptalEt }) {
   const [formData, setFormData] = useState(initialFormData);
 
-  // Input alanları değiştiğinde state'i güncelleyen fonksiyon
+  // Düzenleme moduna girildiğinde formu yükler
+  useEffect(() => {
+    if (duzenlenecekVeri) {
+        // Sayısal alanları input'ta göstermek için stringe çevir
+        setFormData({
+            ...duzenlenecekVeri,
+            kilometre: duzenlenecekVeri.kilometre.toString(),
+            maliyet: duzenlenecekVeri.maliyet.toString(),
+        });
+    } else {
+        // Yeni kayıt modundayken formu temizler
+        setFormData(initialFormData);
+    }
+  }, [duzenlenecekVeri]);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prevData => ({
@@ -23,37 +36,43 @@ function KayitFormu({ onKayitEkle, seciliAracID }) {
     }));
   };
 
-  // Form gönderildiğinde çalışır
   const handleSubmit = (e) => {
     e.preventDefault();
     
-    // Gerekli alanların doldurulup doldurulmadığını kontrol et
     if (!formData.tip || !formData.tarih) {
         alert("İşlem Tipi ve Tarih alanları zorunludur!");
         return;
     }
     
-    // Seçili araç yoksa kayıt eklemeyi engelle
-    if (!seciliAracID) {
-        alert("Lütfen bir araç seçin!");
-        return;
-    }
-
-    // App.jsx'ten gelen fonksiyonu çağırarak kaydı Local Storage'a ekle
-    onKayitEkle({
+    const temizlenmisVeri = {
         ...formData,
-        // Sayısal alanları temizlemek ve sayıya çevirmek
+        // Kilometre ve maliyeti sayıya çeviriyoruz
         kilometre: parseInt(formData.kilometre) || 0,
         maliyet: parseFloat(formData.maliyet) || 0,
-    });
+    };
 
-    // Formu temizle
+    if (duzenlenecekVeri) {
+        // GÜNCELLEME İŞLEMİ
+        onGuncelle({ ...temizlenmisVeri, id: duzenlenecekVeri.id, aracID: duzenlenecekVeri.aracID });
+    } else {
+        // YENİ EKLEME İŞLEMİ
+        if (!seciliAracID) {
+            alert("Lütfen bir araç seçin!");
+            return;
+        }
+        onKayitEkle(temizlenmisVeri);
+    }
+    
+    // İşlem bitince formu sıfırla ve düzenleme modundan çık
     setFormData(initialFormData);
+    if(duzenlenecekVeri) {
+        onDuzenlemeyiIptalEt();
+    }
   };
 
   return (
     <form onSubmit={handleSubmit} className="kayit-formu" style={formStyle}>
-      <h3>Yeni İşlem Kaydı Ekle</h3>
+      <h3>{duzenlenecekVeri ? 'Kaydı Düzenle' : 'Yeni İşlem Kaydı Ekle'}</h3>
       
       {/* 1. İşlem Tipi */}
       <div style={inputGroupStyle}>
@@ -141,8 +160,19 @@ function KayitFormu({ onKayitEkle, seciliAracID }) {
       </div>
 
       <button type="submit" style={buttonStyle}>
-        Kaydı Ekle
+        {duzenlenecekVeri ? 'Güncellemeyi Kaydet' : 'Kaydı Ekle'}
       </button>
+
+      {/* Düzenleme modundayken İptal butonu */}
+      {duzenlenecekVeri && (
+          <button 
+              type="button" 
+              onClick={onDuzenlemeyiIptalEt}
+              style={{...buttonStyle, backgroundColor: '#6c757d', marginTop: '5px'}}
+          >
+              İptal
+          </button>
+      )}
     </form>
   );
 }
@@ -150,16 +180,14 @@ function KayitFormu({ onKayitEkle, seciliAracID }) {
 export default KayitFormu;
 
 
-// *** Basit Mobil Uyumlu Stil Önerileri ***
+// *** Stil Tanımlamaları ***
 const formStyle = {
     padding: '20px',
-    margin: '20px 0',
+    margin: '20px auto',
     border: '1px solid #ccc',
     borderRadius: '8px',
     backgroundColor: '#f9f9f9',
     maxWidth: '500px', 
-    marginLeft: 'auto',
-    marginRight: 'auto'
 };
 
 const inputGroupStyle = {

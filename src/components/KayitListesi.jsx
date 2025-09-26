@@ -3,17 +3,16 @@ import React, { useState } from 'react';
 // Kayıt Tipi Renklendirmesi için Basit Yardımcı Fonksiyon
 const getTypeColor = (tip) => {
     switch (tip) {
-        case 'Bakım': return '#17a2b8'; // Mavi
-        case 'Muayene': return '#28a745'; // Yeşil
-        case 'Parça Değişimi': return '#ffc107'; // Sarı
-        case 'Yıkama': return '#007bff'; // Koyu Mavi
-        case 'Kaza/Hasar': return '#dc3545'; // Kırmızı
-        default: return '#6c757d'; // Gri
+        case 'Bakım': return '#17a2b8';
+        case 'Muayene': return '#28a745';
+        case 'Parça Değişimi': return '#ffc107';
+        case 'Yıkama': return '#007bff';
+        case 'Kaza/Hasar': return '#dc3545';
+        default: return '#6c757d';
     }
 };
 
-function KayitListesi({ kayitlar, onKayitSil }) {
-    // Filtreleme için state (varsayılan olarak tümünü göster)
+function KayitListesi({ kayitlar, onKayitSil, onKayitDuzenle }) {
     const [filtre, setFiltre] = useState('Hepsi');
     
     // Filtrelenmiş Kayıtları Hesaplama
@@ -79,12 +78,21 @@ function KayitListesi({ kayitlar, onKayitSil }) {
                         <p style={{...detailStyle, fontStyle: 'italic'}}>**Açıklama:** {kayit.aciklama}</p>
                     )}
 
-                    <button 
-                        onClick={() => onKayitSil(kayit.id)}
-                        style={deleteButtonStyle}
-                    >
-                        🗑️ Sil
-                    </button>
+                    <div style={buttonGroupStyle}> 
+                        <button 
+                            onClick={() => onKayitDuzenle(kayit)}
+                            style={editButtonStyle}
+                        >
+                            ✏️ Düzenle
+                        </button>
+
+                        <button 
+                            onClick={() => onKayitSil(kayit.id)}
+                            style={deleteButtonStyle}
+                        >
+                            🗑️ Sil
+                        </button>
+                    </div>
                 </div>
             ))}
         </div>
@@ -149,6 +157,23 @@ const detailStyle = {
     lineHeight: '1.4'
 };
 
+const buttonGroupStyle = {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    marginTop: '15px'
+};
+
+const editButtonStyle = {
+    backgroundColor: '#ffc107',
+    color: '#333',
+    border: 'none',
+    padding: '8px 15px',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '0.9em',
+};
+
 const deleteButtonStyle = {
     backgroundColor: '#dc3545',
     color: 'white',
@@ -156,6 +181,5 @@ const deleteButtonStyle = {
     padding: '8px 15px',
     borderRadius: '4px',
     cursor: 'pointer',
-    marginTop: '10px',
     fontSize: '0.9em',
 };
