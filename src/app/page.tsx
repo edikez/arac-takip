@@ -1,12 +1,14 @@
 'use client'; 
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase.ts'; 
 import { useRouter } from 'next/navigation';
 import { User } from '@supabase/supabase-js'; 
 import Link from 'next/link'; 
 
-// --- Veri Tipleri ---
+import VehicleRegistrationForm from '@/components/VehicleRegistrationForm.tsx'; // YENİ FORM
+
+// --- Veri Tipi ---
 interface Vehicle {
     id: string;
     plaka: string;
@@ -23,16 +25,14 @@ interface Hatirlatici {
     tarih: string;
 }
 
-// --- Ana Sayfa Komponenti ---
+
 export default function Home() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
     
-    // Araç ekleme form state'leri
-    const [plaka, setPlaka] = useState('');
-    const [tanim, setTanim] = useState('');
-    const [kilometre, setKilometre] = useState('');
+    // Uygulama state'leri
+    const [isFormOpen, setIsFormOpen] = useState(false); // Adım Adım Form Açık/Kapalı
     const [isSubmitting, setIsSubmitting] = useState(false);
     
     // Araç listesi, tüm kayıtlar ve hata state'leri
@@ -43,35 +43,6 @@ export default function Home() {
 
     // --- Fonksiyonlar ---
 
-    // A. Kullanıcı oturumunu kontrol etme
-    useEffect(() => {
-        async function checkUser() {
-            const { data: { session } } = await supabase.auth.getSession();
-            
-            if (!session) {
-                router.push('/login');
-            } else {
-                setUser(session.user);
-                setLoading(false);
-            }
-        }
-        checkUser();
-        
-        // Oturum dinleyicisi
-        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_OUT') {
-                router.push('/login');
-            } else if (session) {
-                setUser(session.user);
-            }
-        });
-
-        return () => {
-            authListener?.subscription.unsubscribe();
-        };
-    }, [router]);
-    
-    
     // B. Veri Tabanından Araçları ve Kayıtları Çekme
     const fetchData = useCallback(async () => {
         if (!user) return;
@@ -92,60 +63,55 @@ export default function Home() {
         setVehicles(vehicleData as Vehicle[]);
         
         // 2. TÜM Bakım Kayıtlarını Çek (Hatırlatıcı için)
-        // RLS kuralı, sadece kullanıcının araçlarına ait kayıtları getirecektir.
         const { data: recordsData, error: recordsError } = await supabase
             .from('bakim_kayitlari')
-            .select('arac_id, tip, tarih, kilometre'); // Sadece gerekli kolonları çekiyoruz
+            .select('arac_id, tip, tarih, kilometre'); 
 
         if (recordsError) {
-             setFetchError('Bakım kayıtları yüklenirken hata oluştu.');
-             return;
+             // Bu sadece bir uyarıdır, kritik hata değil
+             console.warn('Bakım kayıtları yüklenirken hata: ', recordsError);
         }
-        setAllRecords(recordsData);
+        setAllRecords(recordsData || []); // Veri yoksa boş dizi döndür
+        setLoading(false);
 
 
     }, [user]); 
     
+    
+    // A. Kullanıcı oturumunu kontrol etme
+    useEffect(() => {
+        async function checkUser() {
+            const { data: { session } } = await supabase.auth.getSession();
+            
+            if (!session) {
+                router.push('/login');
+            } else {
+                setUser(session.user);
+            }
+        }
+        checkUser();
+        
+        const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT') {
+                router.push('/login');
+            } else if (session) {
+                setUser(session.user);
+            }
+        });
+
+        return () => {
+            authListener?.subscription.unsubscribe();
+        };
+
+    }, [router]);
+    
+    // Veri Çekme useEffect'i
     useEffect(() => {
         if (user) {
             fetchData();
         }
     }, [user, fetchData]);
 
-
-    // C. Yeni Araç Ekleme İşlemi (Supabase INSERT)
-    const handleAddVehicle = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!user || isSubmitting) return; 
-
-        setIsSubmitting(true);
-        setFetchError('');
-        
-        const newVehicle = {
-            plaka: plaka.toUpperCase(),
-            tanim: tanim || `Kayıtlı Araç (${plaka})`,
-            kilometre: parseInt(kilometre) || 0,
-            user_id: user.id,
-        };
-
-        const { data, error } = await supabase
-            .from('vehicles')
-            .insert([newVehicle])
-            .select(); 
-
-        if (error) {
-            console.error(error);
-            setFetchError(`Araç eklenirken hata oluştu: ${error.message}`);
-        } else {
-            // Başarılı olursa listeyi güncelle ve veriyi tekrar çek
-            await fetchData(); 
-            setPlaka('');
-            setTanim('');
-            setKilometre('');
-        }
-
-        setIsSubmitting(false);
-    };
 
     // D. Araç Silme İşlemi (Supabase DELETE)
     const handleDeleteVehicle = async (vehicleId: string, plaka: string) => {
@@ -164,7 +130,7 @@ export default function Home() {
         if (error) {
             setFetchError(`Silme işlemi başarısız: ${error.message}`);
         } else {
-            // Listeyi ve tüm kayıtları güncelle
+            // Başarılı olursa listeyi ve tüm kayıtları güncelle
             await fetchData(); 
         }
 
@@ -177,26 +143,22 @@ export default function Home() {
         await supabase.auth.signOut();
     };
 
-    // --- YENİ MANTIK: Hatırlatıcıları Hesaplama ---
+    // --- HATIRLATICI MANTIĞI (GÖRSELDEKİ ÖZELLİK) ---
     const yaklasanIslemler = useMemo(() => {
         const today = new Date().getTime();
         const alerts: Hatirlatici[] = [];
         
-        // ÖRNEK: Her 1 yıl veya 15.000 km'de bir bakımı zorunlu kılalım.
-        const BAKIM_ARALIGI_AY = 12; // Ay
-        const HATIRLATMA_SURESI_GUN = 60; // 60 gün öncesinden uyarı ver
+        const BAKIM_ARALIGI_AY = 12; 
+        const HATIRLATMA_SURESI_GUN = 60; 
 
         vehicles.forEach(v => {
-            // O araca ait tüm bakım kayıtlarını filtrele
             const aracKayitlari = allRecords.filter(r => r.arac_id === v.id);
-
-            // Son Bakım Kaydını bul (en son tarihli olanı)
-            const sonBakim = aracKayitlari.filter(r => r.tip === 'Bakım').sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime())[0];
+            const sonBakim = aracKayitlari.filter(r => r.tip === 'Motor Yağı').sort((a, b) => new Date(b.tarih).getTime() - new Date(a.tarih).getTime())[0];
             
             if (sonBakim) {
                 const sonBakimTarih = new Date(sonBakim.tarih);
                 
-                // 1. Tarih Bazlı Kontrol
+                // Tarih Bazlı Kontrol
                 const sonrakiBakimTarih = new Date(sonBakimTarih.setMonth(sonBakimTarih.getMonth() + BAKIM_ARALIGI_AY));
                 const kalanMs = sonrakiBakimTarih.getTime() - today;
                 const kalanGun = Math.ceil(kalanMs / (1000 * 60 * 60 * 24));
@@ -209,24 +171,9 @@ export default function Home() {
                         tarih: sonrakiBakimTarih.toISOString().split('T')[0],
                     });
                 }
-                
-                // 2. Kilometre Bazlı Kontrol (Son bakımın kilometre kaydını kullanıyoruz)
-                const sonrakiBakimKm = sonBakim.kilometre + 15000; // Son bakımdan 15000 km sonra
-                const kalanKm = sonrakiBakimKm - v.kilometre;
-                
-                if (kalanKm <= 1000 && kalanKm > 0) { // Son 1000 km kala uyar
-                     alerts.push({
-                        aracPlaka: v.plaka,
-                        tip: 'Km Bakımı',
-                        kalanGun: Math.floor(kalanKm),
-                        tarih: `Mevcut KM: ${v.kilometre.toLocaleString()}`,
-                    });
-                }
-
             }
         });
 
-        // Kalan gün sayısına göre sırala (en acil olan en üstte)
         return alerts.sort((a, b) => a.kalanGun - b.kalanGun);
 
     }, [vehicles, allRecords]);
@@ -268,9 +215,24 @@ export default function Home() {
                         Araç Yönetim Paneli
                     </p>
                     
-                    {/* YENİ: HATIRLATICI PANELİ */}
+                    {fetchError && <p className="text-red-500 mb-4 font-semibold p-2 border border-red-300 bg-red-50 rounded-md">{fetchError}</p>}
+                    
+                    
+                    {/* YENİ: Araç Ekleme Butonu (Görseldeki gibi mobil odaklı) */}
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-xl font-semibold text-gray-700">Kayıtlı Araçlarım ({vehicles.length})</h2>
+                         <button
+                            onClick={() => setIsFormOpen(true)}
+                            className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-lg shadow-md hover:bg-indigo-700 transition transform hover:scale-105 text-sm"
+                        >
+                            ➕ Yeni Araç Kaydı Başlat
+                        </button>
+                    </div>
+                    
+                    {/* HATIRLATICI PANELİ */}
                     {yaklasanIslemler.length > 0 && (
-                        <div className="mb-8 p-4 bg-yellow-100 border border-yellow-400 rounded-lg shadow-md">
+                        <div className="mb-8 p-4 bg-yellow-100 border border-yellow-400 rounded-xl shadow-md">
+                            {/* ... (Hatırlatıcı kodları aynı) ... */}
                             <h3 className="text-xl font-bold text-yellow-800 mb-3 flex items-center space-x-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -290,57 +252,8 @@ export default function Home() {
                             </div>
                         </div>
                     )}
-                    
-                    {fetchError && <p className="text-red-500 mb-4 font-semibold p-2 border border-red-300 bg-red-50 rounded-md">{fetchError}</p>}
-                    
-                    {/* YENİ ARAÇ EKLEME FORMU */}
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Yeni Araç Ekle</h2>
-                    <form onSubmit={handleAddVehicle} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 p-4 border rounded-lg bg-gray-50 shadow-inner">
-                        
-                        {/* Plaka */}
-                        <input
-                            type="text"
-                            placeholder="Plaka (Örn: 07 ABC 123)"
-                            value={plaka}
-                            onChange={(e) => setPlaka(e.target.value)}
-                            required
-                            className="col-span-1 p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            disabled={isSubmitting}
-                        />
 
-                        {/* Tanım */}
-                        <input
-                            type="text"
-                            placeholder="Tanım (Örn: Lojistik Kamyonet)"
-                            value={tanim}
-                            onChange={(e) => setTanim(e.target.value)}
-                            className="col-span-1 p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            disabled={isSubmitting}
-                        />
-                        
-                        {/* Kilometre */}
-                        <input
-                            type="number"
-                            placeholder="Kilometre"
-                            value={kilometre}
-                            onChange={(e) => setKilometre(e.target.value)}
-                            required
-                            className="col-span-1 p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 text-gray-900"
-                            disabled={isSubmitting}
-                        />
-                        
-                        {/* Ekle Butonu */}
-                        <button
-                            type="submit"
-                            className="col-span-1 bg-green-500 text-white font-semibold rounded-md hover:bg-green-600 transition duration-150 disabled:opacity-50"
-                            disabled={isSubmitting || !plaka}
-                        >
-                            {isSubmitting ? 'Ekleniyor...' : 'Aracı Ekle'}
-                        </button>
-                    </form>
-                    
                     {/* ARAÇ LİSTESİ (Profesyonel Tablo Görünümü) */}
-                    <h2 className="text-xl font-semibold mb-4 text-gray-700 mt-8 border-t pt-4">Kayıtlı Araçlarım ({vehicles.length})</h2>
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200 shadow-lg rounded-lg">
                             <thead className="bg-gray-100">
@@ -393,6 +306,26 @@ export default function Home() {
 
                 </div>
             </main>
+            
+            {/* ADIM ADIM FORM MODALI */}
+            {isFormOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-3xl max-w-xl w-full p-6 relative">
+                        {/* Kapat butonu */}
+                        <button 
+                            onClick={() => setIsFormOpen(false)} 
+                            className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition"
+                        >
+                             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                        {/* Form Komponenti */}
+                        <VehicleRegistrationForm onSuccess={() => {
+                            setIsFormOpen(false); // Formu kapat
+                            fetchData(); // Araç listesini yenile
+                        }} />
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
