@@ -1,14 +1,14 @@
 'use client'; 
 
-import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase.ts'; 
+import { useEffect, useState, useCallback, useMemo } from 'react'; // <<< useMemo EKLENDİ
+import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { User } from '@supabase/supabase-js'; 
 import Link from 'next/link'; 
 
-import VehicleRegistrationForm from '@/components/VehicleRegistrationForm.tsx'; // YENİ FORM
+import VehicleRegistrationForm from '@/components/VehicleRegistrationForm.tsx'; 
 
-// --- Veri Tipi ---
+// --- Veri Tipleri ---
 interface Vehicle {
     id: string;
     plaka: string;
@@ -17,7 +17,6 @@ interface Vehicle {
     user_id: string; 
 }
 
-// --- Yeni Tip: Hatırlatıcı Veri Yapısı ---
 interface Hatirlatici {
     aracPlaka: string;
     tip: string;
@@ -25,19 +24,18 @@ interface Hatirlatici {
     tarih: string;
 }
 
-
 export default function Home() {
     const router = useRouter();
     const [loading, setLoading] = useState(true);
     const [user, setUser] = useState<User | null>(null);
     
     // Uygulama state'leri
-    const [isFormOpen, setIsFormOpen] = useState(false); // Adım Adım Form Açık/Kapalı
+    const [isFormOpen, setIsFormOpen] = useState(false); 
     const [isSubmitting, setIsSubmitting] = useState(false);
     
-    // Araç listesi, tüm kayıtlar ve hata state'leri
+    // Veri state'leri
     const [vehicles, setVehicles] = useState<Vehicle[]>([]); 
-    const [allRecords, setAllRecords] = useState<any[]>([]); // Tümü
+    const [allRecords, setAllRecords] = useState<any[]>([]); 
     const [fetchError, setFetchError] = useState('');
 
 
@@ -63,15 +61,11 @@ export default function Home() {
         setVehicles(vehicleData as Vehicle[]);
         
         // 2. TÜM Bakım Kayıtlarını Çek (Hatırlatıcı için)
-        const { data: recordsData, error: recordsError } = await supabase
+        const { data: recordsData } = await supabase
             .from('bakim_kayitlari')
             .select('arac_id, tip, tarih, kilometre'); 
 
-        if (recordsError) {
-             // Bu sadece bir uyarıdır, kritik hata değil
-             console.warn('Bakım kayıtları yüklenirken hata: ', recordsError);
-        }
-        setAllRecords(recordsData || []); // Veri yoksa boş dizi döndür
+        setAllRecords(recordsData || []);
         setLoading(false);
 
 
@@ -91,6 +85,7 @@ export default function Home() {
         }
         checkUser();
         
+        // Oturum değişikliği dinleyicisi
         const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_OUT') {
                 router.push('/login');
@@ -122,6 +117,8 @@ export default function Home() {
         setIsSubmitting(true);
         setFetchError('');
         
+        // ÖNEMLİ: Supabase, Foreign Key'ler sayesinde genellikle bağlı kayıtları otomatik siler.
+        // Ancak bu komut sadece vehicles tablosundaki kaydı siler.
         const { error } = await supabase
             .from('vehicles')
             .delete()
@@ -130,7 +127,6 @@ export default function Home() {
         if (error) {
             setFetchError(`Silme işlemi başarısız: ${error.message}`);
         } else {
-            // Başarılı olursa listeyi ve tüm kayıtları güncelle
             await fetchData(); 
         }
 
@@ -143,8 +139,8 @@ export default function Home() {
         await supabase.auth.signOut();
     };
 
-    // --- HATIRLATICI MANTIĞI (GÖRSELDEKİ ÖZELLİK) ---
-    const yaklasanIslemler = useMemo(() => {
+    // --- HATIRLATICI MANTIĞI (useMemo ile performans optimize edildi) ---
+    const yaklasanIslemler = useMemo(() => { // <<< useMemo BURADA KULLANILIR
         const today = new Date().getTime();
         const alerts: Hatirlatici[] = [];
         
@@ -176,7 +172,7 @@ export default function Home() {
 
         return alerts.sort((a, b) => a.kalanGun - b.kalanGun);
 
-    }, [vehicles, allRecords]);
+    }, [vehicles, allRecords]); // vehicles veya allRecords değiştiğinde yeniden hesaplar
 
 
     if (loading) {
@@ -218,7 +214,7 @@ export default function Home() {
                     {fetchError && <p className="text-red-500 mb-4 font-semibold p-2 border border-red-300 bg-red-50 rounded-md">{fetchError}</p>}
                     
                     
-                    {/* YENİ: Araç Ekleme Butonu (Görseldeki gibi mobil odaklı) */}
+                    {/* YENİ: Araç Ekleme Butonu (Satışa Hazır Tasarım) */}
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-xl font-semibold text-gray-700">Kayıtlı Araçlarım ({vehicles.length})</h2>
                          <button
@@ -232,7 +228,6 @@ export default function Home() {
                     {/* HATIRLATICI PANELİ */}
                     {yaklasanIslemler.length > 0 && (
                         <div className="mb-8 p-4 bg-yellow-100 border border-yellow-400 rounded-xl shadow-md">
-                            {/* ... (Hatırlatıcı kodları aynı) ... */}
                             <h3 className="text-xl font-bold text-yellow-800 mb-3 flex items-center space-x-2">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
@@ -283,7 +278,7 @@ export default function Home() {
                                             {/* SİL BUTONU */}
                                             <button
                                                 onClick={(e) => { 
-                                                    e.preventDefault(); 
+                                                    e.preventDefault(); // Link'e tıklanmayı engeller 
                                                     handleDeleteVehicle(v.id, v.plaka); 
                                                 }}
                                                 className="text-red-600 hover:text-red-900 transition duration-150 p-2 rounded-md bg-red-50 hover:bg-red-100"
